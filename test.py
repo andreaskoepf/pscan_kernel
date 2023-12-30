@@ -28,6 +28,7 @@ def benchmark():
     #N, T, D = 128, 1024, 32
     #N, T, D = 256, 2048, 256
     N, T, D = 384, 1024, 64
+    #N, T, D = 2, 1047, 3
     #N, T, D = 1024, 1024, 100
 
     #A = torch.ones(N, T, 1, dtype=torch.float32, device="cuda") * 1.001
