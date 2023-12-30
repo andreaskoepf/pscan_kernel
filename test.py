@@ -71,20 +71,23 @@ def benchmark():
 def dev():
     #N, T, D = 1, 32, 4
     #N, T, D = 1, 8, 2*1024
-    #N, T, D = 22, 8, 8
-    N, T, D = 15, 16, 12
-    #A = torch.rand(N, T, 1, dtype=torch.float32, device="cuda") + 0.55
-    #X = torch.rand(N, T, D, dtype=torch.float32, device="cuda")
+    N, T, D = 10, 4, 18
+    #N, T, D = 1024, 1024, 2
+    # A = torch.rand(N, T, 1, dtype=torch.float32, device="cuda") + 0.55
+    # X = torch.rand(N, T, D, dtype=torch.float32, device="cuda")
     A = torch.ones(N, T, 1, dtype=torch.float32, device="cuda") * 0.4
     X = torch.ones(N, T, D, dtype=torch.float32, device="cuda")
 
-    A1=A.clone()
-    X1=X.clone()
-    expand_(A1, X1)
-
+    A1 = A.clone()
+    X1 = X.clone()
+    
     A2 = A.clone()
     X2 = X.clone()
+
+    expand_(A1, X1)
+
     z = pscan_scan_fwd(A2, X2)[0]
+    torch.cuda.synchronize()
     
     torch.set_printoptions(profile="full")
     #print('A', A[0,0:])
@@ -92,8 +95,8 @@ def dev():
     d = X1-X2
     d[d.abs()<0.0001] = 0
     
-    print('diff', d)
-    print(X2)
+    #print('diff', d)
+    #print(X2)
     print('A == A_', torch.allclose(A1, A2), torch.max(torch.abs(A1-A2)).item())
     print('X == X_', torch.allclose(X1, X2), torch.max(torch.abs(X1-X2)).item())
 

@@ -38,32 +38,34 @@ __global__ void pscan_fwd_kernel(
     // allocated on invocation 
     extern __shared__ float temp[];
 
-    const int batchId = blockIdx.x;
-    const int dimOffset = blockIdx.y;
+    volatile float* dimBase = temp + powerOfTwo;
+
+    const int batchId = blockIdx.x / dim;
+    const int dimOffset = blockIdx.x % dim;
     const int tid = threadIdx.x;
 
     int ai = 2 * tid;
     int bi = 2 * tid + 1;
 
     if (tid < seqlen) {
-        temp[ai ] = A[batchId * strideAN + ai * strideAT];
-        temp[bi ] = A[batchId * strideAN + bi * strideAT];
+        temp[ai] = A[batchId * strideAN + ai * strideAT];
+        temp[bi] = A[batchId * strideAN + bi * strideAT];
+
+        dimBase[ai] = X[batchId * strideXN + ai * strideXT + dimOffset * strideXD];
+        dimBase[bi] = X[batchId * strideXN + bi * strideXT + dimOffset * strideXD];
     } else {
         temp[ai] = 1;
         temp[bi] = 1;
     }
 
-    for (int stride = 1; stride <= blockDim.x; stride *= 2)  {
-        // build sum in place up the tree
+    // build sum in place up the tree
+    for (int stride = 1; stride <= blockDim.x; stride *= 2) {
         __syncthreads();
 
         int bi = (tid + 1) * stride * 2 - 1;
+        int ai = bi - stride;
         if (bi < seqlen) {
-            int ai = bi - stride;
-
-            X[batchId * strideXN + bi * strideXT + dimOffset * strideXD] += 
-                X[batchId * strideXN + ai * strideXT + dimOffset * strideXD] * temp[bi];
-            
+            dimBase[bi] += dimBase[ai] * temp[bi];
             temp[bi] *= temp[ai];
         }
     }
@@ -71,13 +73,12 @@ __global__ void pscan_fwd_kernel(
     // traverse down tree & build scan
     for (int stride = powerOfTwo / 4; stride > 0; stride >>= 1) {
         __syncthreads();
-        int ai = (tid + 1) * stride * 2 - 1;
-        if (ai + stride < powerOfTwo) {
-            int bi = ai + stride;
-            
-            X[batchId * strideXN + bi * strideXT + dimOffset * strideXD] += 
-                X[batchId * strideXN + ai * strideXT + dimOffset * strideXD] * temp[bi];
 
+        int ai = (tid + 1) * stride * 2 - 1;
+        int bi = ai + stride;
+        if (ai + stride < powerOfTwo) {
+            dimBase[bi] += dimBase[ai] * temp[bi];
+            __threadfence_system();
             temp[bi] *= temp[ai];
         }
     }
@@ -89,33 +90,29 @@ __global__ void pscan_fwd_kernel(
             A[batchId * strideAN + ai * strideAT] = temp[ai];
             A[batchId * strideAN + bi * strideAT] = temp[bi];
         }
+        X[batchId * strideXN + ai * strideXT + dimOffset * strideXD] = dimBase[ai];
+        X[batchId * strideXN + bi * strideXT + dimOffset * strideXD] = dimBase[bi];
 	}
 }
-
-
-const int THREADS_PER_BLOCK = 512;
-const int ELEMENTS_PER_BLOCK = THREADS_PER_BLOCK * 2;
 
 
 template<typename input_t>
 void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {    
 
-    auto accessorA = params.A.packed_accessor32<input_t, 3, torch::DefaultPtrTraits>();
-    auto accessorX = params.X.packed_accessor32<input_t, 3, torch::DefaultPtrTraits>();
-
-    assert(params.seqlen <= ELEMENTS_PER_BLOCK);
+    assert(params.seqlen <= 1024);
 
     int numThreads = _cdiv(params.seqlen, 2);
     int powerOfTwo = nextPowerOfTwo(params.seqlen);
 
-    dim3 grid(params.batch, params.dim);
+    //dim3 grid(params.batch, params.dim);
+    int num_blocks = params.batch * params.dim;
     
     int shared_mem_size = 48 * 1024;
 
     //std::cout << "stides: " << params.X.stride(0) << " " << params.X.stride(1) << " " << params.X.stride(2) << std::endl;
 
     auto kernel = &pscan_fwd_kernel<input_t>;
-    kernel<<<grid, numThreads, shared_mem_size, stream>>>(
+    kernel<<<num_blocks, numThreads, shared_mem_size, stream>>>(
         params.A.data_ptr<input_t>(),
         params.X.data_ptr<input_t>(),
         params.X.stride(0), params.X.stride(1), params.X.stride(2),
