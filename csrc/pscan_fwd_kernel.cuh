@@ -82,7 +82,7 @@ __global__ void pscan_fwd_kernel(
 	__syncthreads();
 
 	if (tid < seqlen) {
-        if (dimOffset == 0) {
+        if (dimOffset == dim-1) {
             // store result in A
             A[batchId * strideAN + ai * strideAT] = temp[ai];
             A[batchId * strideAN + bi * strideAT] = temp[bi];
@@ -96,7 +96,7 @@ __global__ void pscan_fwd_kernel(
 template<typename input_t>
 void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {    
 
-    assert(params.seqlen <= 1024);
+    assert(params.seqlen <= 2048);
 
     int numThreads = _cdiv(params.seqlen, 2);
     int powerOfTwo = nextPowerOfTwo(params.seqlen);
@@ -104,7 +104,7 @@ void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {
     //dim3 grid(params.batch, params.dim);
     int num_blocks = params.batch * params.dim;
     
-    int shared_mem_size = 32 * 1024;
+    int shared_mem_size = 24 * 1024;
 
     //std::cout << "N: " << params.batch << "; D: " << params.dim << std::endl;
     //std::cout << "stides: " << params.X.stride(0) << " " << params.X.stride(1) << " " << params.X.stride(2) << std::endl;
