@@ -1,10 +1,7 @@
 #pragma once
 
-//#include <cuda_bf16.h>
-//#include <cuda_fp16.h>
-
-#include <c10/util/BFloat16.h>
-#include <c10/util/Half.h>
+//#include <c10/util/BFloat16.h>
+//#include <c10/util/Half.h>
 #include <c10/cuda/CUDAException.h>  // For C10_CUDA_CHECK and C10_CUDA_KERNEL_LAUNCH_CHECK
 #include <ATen/cuda/CUDAContext.h>
 #include "pscan.h"
@@ -64,11 +61,9 @@ __global__ void pscan_fwd_kernel(
         if (bi < seqlen) {
             int ai = bi - stride;
 
-            
             X[batchId * strideXN + bi * strideXT + dimOffset * strideXD] += 
                 X[batchId * strideXN + ai * strideXT + dimOffset * strideXD] * temp[bi];
             
-
             temp[bi] *= temp[ai];
         }
     }
@@ -117,12 +112,10 @@ void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {
     
     int shared_mem_size = 48 * 1024;
 
-    std::cout << "stide" << params.X.stride(0) << " " << params.X.stride(1) << " " << params.X.stride(2) << std::endl;
+    //std::cout << "stides: " << params.X.stride(0) << " " << params.X.stride(1) << " " << params.X.stride(2) << std::endl;
 
     auto kernel = &pscan_fwd_kernel<input_t>;
-    //kernel<<<grid, numThreads, shared_mem_size, stream>>>(
-        kernel<<<grid, numThreads, shared_mem_size>>>(
-        //accessorA, accessorX,
+    kernel<<<grid, numThreads, shared_mem_size, stream>>>(
         params.A.data_ptr<input_t>(),
         params.X.data_ptr<input_t>(),
         params.X.stride(0), params.X.stride(1), params.X.stride(2),
