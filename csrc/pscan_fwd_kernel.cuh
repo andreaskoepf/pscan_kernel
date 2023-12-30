@@ -109,7 +109,7 @@ void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {
 
     assert(params.seqlen <= 2048);
     
-    const int totalSharedMem = 48 * 1024;
+    const int totalSharedMem = 32 * 1024;
     int powerOfTwo = nextPowerOfTwo(params.seqlen);
 
     int shared_mem_size = totalSharedMem;
