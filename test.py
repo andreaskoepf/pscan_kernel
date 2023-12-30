@@ -72,7 +72,7 @@ def dev():
     #N, T, D = 1, 32, 4
     #N, T, D = 1, 8, 2*1024
     #N, T, D = 22, 8, 8
-    N, T, D = 1, 4, 512
+    N, T, D = 15, 16, 12
     #A = torch.rand(N, T, 1, dtype=torch.float32, device="cuda") + 0.55
     #X = torch.rand(N, T, D, dtype=torch.float32, device="cuda")
     A = torch.ones(N, T, 1, dtype=torch.float32, device="cuda") * 0.4

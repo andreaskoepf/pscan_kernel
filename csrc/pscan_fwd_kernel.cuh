@@ -44,10 +44,8 @@ __global__ void pscan_fwd_kernel(
     
     // float* dimBase = &temp[powerOfTwo + 32];
 
-    //const int batchId = blockIdx.x;
-    //const int dimBlock = blockIdx.y;
-    const int batchId = 0;
-    const int dimBlock = blockIdx.x;
+    const int batchId = blockIdx.x;
+    const int dimBlock = blockIdx.y;
 
     const int dimOffset = dimBlock * dimChunk;
     const int tid = threadIdx.x;
@@ -162,8 +160,7 @@ void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {
     //dim3 grid(params.batch, dimBlocks);
     
     int dimChunk = 1;
-    //dim3 grid(params.batch, params.dim);
-    dim3 grid(params.dim);
+    dim3 grid(params.batch, params.dim);
     
     int shared_mem_size = 48 * 1024;
 
