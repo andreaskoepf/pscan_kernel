@@ -26,7 +26,8 @@ def expand_(A, X):
 def benchmark():
     #N, T, D = 26, 16, 32
     #N, T, D = 128, 1024, 32
-    N, T, D = 64*1024, 2048, 1
+    #N, T, D = 256, 2048, 256
+    N, T, D = 384, 1024, 64
     #N, T, D = 1024, 1024, 100
 
     #A = torch.ones(N, T, 1, dtype=torch.float32, device="cuda") * 1.001
@@ -106,6 +107,6 @@ def dev():
     print('A == A_', torch.allclose(A1, A2), torch.max(torch.abs(A1-A2)).item())
     print('X == X_', torch.allclose(X1, X2), torch.max(torch.abs(X1-X2)).item())
 
-dev()
-#benchmark()
+#dev()
+benchmark()
 

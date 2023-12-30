@@ -31,15 +31,16 @@ __global__ void pscan_fwd_kernel(
     int batch,
     int seqlen,
     int dim,
-    int powerOfTwo
+    int powerOfTwo,
+    int dimChunk
 ) {
     // allocated on invocation 
     extern __shared__ float temp[];
 
     float* dimBase = temp + powerOfTwo;
 
-    const int batchId = blockIdx.x / dim;
-    const int dimOffset = blockIdx.x % dim;
+    const int batchId = blockIdx.x / (dim/dimChunk);
+    const int dimOffset = (blockIdx.x % (dim/dimChunk)) * dimChunk;
     const int tid = threadIdx.x;
 
     int ai = 2 * tid;
@@ -49,8 +50,10 @@ __global__ void pscan_fwd_kernel(
         temp[ai] = A[batchId * strideAN + ai * strideAT];
         temp[bi] = A[batchId * strideAN + bi * strideAT];
 
-        dimBase[ai] = X[batchId * strideXN + ai * strideXT + dimOffset * strideXD];
-        dimBase[bi] = X[batchId * strideXN + bi * strideXT + dimOffset * strideXD];
+        for (int i=0; i<dimChunk; ++i) {
+            dimBase[ai*dimChunk + i] = X[batchId * strideXN + ai * strideXT + (dimOffset+i) * strideXD];
+            dimBase[bi*dimChunk + i] = X[batchId * strideXN + bi * strideXT + (dimOffset+i) * strideXD];
+        }
     } else {
         temp[ai] = 1;
         temp[bi] = 1;
@@ -63,7 +66,9 @@ __global__ void pscan_fwd_kernel(
         int bi = (tid + 1) * stride * 2 - 1;
         int ai = bi - stride;
         if (bi < seqlen) {
-            dimBase[bi] += dimBase[ai] * temp[bi];
+            for (int i=0; i<dimChunk; ++i) {
+                dimBase[bi*dimChunk + i] += dimBase[ai*dimChunk + i] * temp[bi];
+            }
             temp[bi] *= temp[ai];
         }
     }
@@ -75,20 +80,26 @@ __global__ void pscan_fwd_kernel(
         int ai = (tid + 1) * stride * 2 - 1;
         int bi = ai + stride;
         if (ai + stride < powerOfTwo) {
-            dimBase[bi] += dimBase[ai] * temp[bi];
+            for (int i=0; i<dimChunk; ++i) {
+                dimBase[bi*dimChunk + i] += dimBase[ai*dimChunk + i] * temp[bi];
+            }
             temp[bi] *= temp[ai];
         }
     }
 	__syncthreads();
 
 	if (tid < seqlen) {
-        if (dimOffset == dim-1) {
+        // store result in X
+        for (int i=0; i<dimChunk; ++i) {
+            X[batchId * strideXN + ai * strideXT + (dimOffset+i) * strideXD] = dimBase[ai*dimChunk + i];
+            X[batchId * strideXN + bi * strideXT + (dimOffset+i) * strideXD] = dimBase[bi*dimChunk + i];
+        }
+
+        if (dimOffset == dim-dimChunk) {
             // store result in A
             A[batchId * strideAN + ai * strideAT] = temp[ai];
             A[batchId * strideAN + bi * strideAT] = temp[bi];
         }
-        X[batchId * strideXN + ai * strideXT + dimOffset * strideXD] = dimBase[ai];
-        X[batchId * strideXN + bi * strideXT + dimOffset * strideXD] = dimBase[bi];
 	}
 }
 
@@ -97,26 +108,37 @@ template<typename input_t>
 void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {    
 
     assert(params.seqlen <= 2048);
-
-    int numThreads = _cdiv(params.seqlen, 2);
+    
+    const int totalSharedMem = 48 * 1024;
     int powerOfTwo = nextPowerOfTwo(params.seqlen);
 
-    //dim3 grid(params.batch, params.dim);
-    int num_blocks = params.batch * params.dim;
+    int shared_mem_size = totalSharedMem;
     
-    int shared_mem_size = 24 * 1024;
+    int dimChunk = (totalSharedMem - powerOfTwo * sizeof(input_t)) / (powerOfTwo * sizeof(input_t));
+    while (params.dim % dimChunk != 0) {
+        dimChunk -= 1;
+    }
+    
+    //std::cout << dimChunk << std::endl;
+    
+    //int dimChunk = 8;
+    //int dimChunk = 1;
 
     //std::cout << "N: " << params.batch << "; D: " << params.dim << std::endl;
     //std::cout << "stides: " << params.X.stride(0) << " " << params.X.stride(1) << " " << params.X.stride(2) << std::endl;
 
+    int numThreads = _cdiv(params.seqlen, 2);
+    int numBlocks = params.batch * params.dim / dimChunk;
+
     auto kernel = &pscan_fwd_kernel<input_t>;
-    kernel<<<num_blocks, numThreads, shared_mem_size, stream>>>(
+    kernel<<<numBlocks, numThreads, shared_mem_size, stream>>>(
         params.A.data_ptr<input_t>(),
         params.X.data_ptr<input_t>(),
         params.X.stride(0), params.X.stride(1), params.X.stride(2),
         params.A.stride(0), params.A.stride(1),
         params.batch, params.seqlen, params.dim,
-        powerOfTwo
+        powerOfTwo,
+        dimChunk
     );
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
