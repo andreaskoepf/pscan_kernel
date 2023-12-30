@@ -6,20 +6,9 @@
 # Written by Francois Fleuret <francois@fleuret.org>
 
 import torch, math
-import torch.nn.functional as F
-import einops
 
 ######################################################################
 
-def causal_conv1d(input, weight):
-    N = input.size(-2)
-    X = einops.rearrange(input, "B N D -> (B D) 1 N")
-    print('X', X.shape)
-    k = weight.transpose(-1, -2)
-    o = F.conv1d(X, k, padding=N-1)
-    o = o[:,:,:-(N-1)]
-    o = einops.rearrange(o, "(B D) 1 N -> B N D", D=input.size(-1))
-    return o
 
 class PScan(torch.autograd.Function):
     # Given A is NxTx1 and X is NxTxD, expands A and X in place in O(T),
@@ -36,18 +25,15 @@ class PScan(torch.autograd.Function):
     def expand_(A, X):
         if A.size(1) == 1:
             return
-        print("expand_ ", A.shape, X.shape)
         T = 2 * (A.size(1) // 2)
         Aa = A[:, :T].view(A.size(0), T // 2, 2, -1)
         Xa = X[:, :T].view(X.size(0), T // 2, 2, -1)
-        print("Aa, Xa", Aa.shape, Xa.shape)
         Xa[:, :, 1].add_(Aa[:, :, 1].mul(Xa[:, :, 0]))
         Aa[:, :, 1].mul_(Aa[:, :, 0])
         PScan.expand_(Aa[:, :, 1], Xa[:, :, 1])
         Xa[:, 1:, 0].add_(Aa[:, 1:, 0].mul(Xa[:, :-1, 1]))
         Aa[:, 1:, 0].mul_(Aa[:, :-1, 1])
         if T < A.size(1):
-            print('fixup:', T, A.size(1))
             X[:, -1].add_(A[:, -1].mul(X[:, -2]))
             A[:, -1].mul_(A[:, -2])
 
@@ -75,40 +61,11 @@ class PScan(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, A, X, Y_init):
-        print('A', A)
         ctx.A = A[:, :, None].clone()
         ctx.Y_init = Y_init[:, None, :].clone()
         ctx.A_star = ctx.A.clone()
         ctx.X_star = X.clone()
         PScan.expand_(ctx.A_star, ctx.X_star)
-        print('A', A.shape)
-        print('X', X.shape)
-        print('Y_init', Y_init.shape)
-
-        print('A_star', ctx.A_star.shape)
-        print('X_star', ctx.X_star.shape)
-
-        print('X', X)
-
-        a_ = ctx.A.clone()
-        a_ = a_.cumprod(dim=1)
-        a_[:,0] = 1
-        #l = torch.ones_like(a_)
-        #l[:,1:] = a_[:,:-1]
-        a_ = torch.flip(a_,dims=(1,))
-        print('a_', a_.shape)
-
-        b_ = causal_conv1d(X, a_)
-    
-        #b_ = a_ * X + a_
-        #b_ = b_.cumsum(dim=1)
-
-        print('X_star', ctx.X_star)
-        print('b_', b_)
-
-        print('A_star', ctx.A_star)
-        print('a_', a_)
-
         return ctx.A_star * ctx.Y_init + ctx.X_star
 
     @staticmethod
@@ -130,59 +87,48 @@ pscan = PScan.apply
 if __name__ == "__main__":
     import time, sys
 
-    #N, T, D = 2, 1047, 3
-    N, T, D = 1, 5, 3
+    N, T, D = 2, 1047, 3
 
-    torch.manual_seed(42)
     A = torch.rand(N, T, dtype=torch.float64).requires_grad_()
     X = torch.randn(N, T, D, dtype=torch.float64).requires_grad_()
     Y_init = torch.randn(N, D, dtype=torch.float64).requires_grad_()
 
-
-    Y = pscan(A, X, Y_init)
-
-    quit()
-
-
-
     # Iterative implementation
 
-    # y = Y_init
-    # s = 0
+    y = Y_init
+    s = 0
 
-    # for k in range(A.size(1)):
-    #     y = A[:, k, None] * y + X[:, k]
-    #     s = s + y
+    for k in range(A.size(1)):
+        y = A[:, k, None] * y + X[:, k]
+        s = s + y
 
-    # s = s.sum()
+    s = s.sum()
 
-    # gA_ref, gX_ref, gY_init_ref = torch.autograd.grad(
-    #     s, (A, X, Y_init), retain_graph=True
-    # )
-
-
+    gA_ref, gX_ref, gY_init_ref = torch.autograd.grad(
+        s, (A, X, Y_init), retain_graph=True
+    )
 
     # parallel scan
 
     start_time = time.perf_counter()
-    for _ in range(1): #000):
+    for _ in range(1000):
         Y = pscan(A, X, Y_init)
     duration = time.perf_counter() - start_time
     print(f"duration {duration}")
 
-    # s = Y.sum()
+    s = Y.sum()
 
-    # gA, gX, gY_init = torch.autograd.grad(s, (A, X, Y_init), retain_graph=True)
+    gA, gX, gY_init = torch.autograd.grad(s, (A, X, Y_init), retain_graph=True)
 
-    # # print(gA)
-    # # print(gX)
-    # # print(gY_init)
+    # print(gA)
+    # print(gX)
+    # print(gY_init)
 
-    # print((gA - gA_ref).norm())
-    # print((gX - gX_ref).norm())
-    # print((gY_init - gY_init_ref).norm())
+    print((gA - gA_ref).norm())
+    print((gX - gX_ref).norm())
+    print((gY_init - gY_init_ref).norm())
 
-    # Y1 = pscan(A[:, : T // 2], X[:, : T // 2], Y_init)
-    # Y2 = pscan(A[:, T // 2 :], X[:, T // 2 :], Y1[:, -1])
+    Y1 = pscan(A[:, : T // 2], X[:, : T // 2], Y_init)
+    Y2 = pscan(A[:, T // 2 :], X[:, T // 2 :], Y1[:, -1])
 
-    # print((Y - torch.cat([Y1, Y2], dim=1)).norm())
+    print((Y - torch.cat([Y1, Y2], dim=1)).norm())
