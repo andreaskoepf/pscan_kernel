@@ -24,7 +24,8 @@ def expand_(A, X):
 #N, T, D = 2, 1047,
 #  3
 def benchmark():
-    N, T, D = 26, 16, 32
+    #N, T, D = 26, 16, 32
+    N, T, D = 128, 1024, 32
 
     #A = torch.ones(N, T, 1, dtype=torch.float32, device="cuda") * 1.001
     A = torch.rand(N, T, 1, dtype=torch.float32, device="cuda") + 0.55
@@ -71,8 +72,9 @@ def benchmark():
 def dev():
     #N, T, D = 1, 32, 4
     #N, T, D = 1, 8, 2*1024
-    N, T, D = 10, 4, 18
-    #N, T, D = 1024, 1024, 2
+    #N, T, D = 128, 256, 64  # works
+    #N, T, D = 1024, 1024, 2 # works
+    N, T, D = 1024, 1024, 100
     # A = torch.rand(N, T, 1, dtype=torch.float32, device="cuda") + 0.55
     # X = torch.rand(N, T, D, dtype=torch.float32, device="cuda")
     A = torch.ones(N, T, 1, dtype=torch.float32, device="cuda") * 0.4

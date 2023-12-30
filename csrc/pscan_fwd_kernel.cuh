@@ -1,7 +1,5 @@
 #pragma once
 
-//#include <c10/util/BFloat16.h>
-//#include <c10/util/Half.h>
 #include <c10/cuda/CUDAException.h>  // For C10_CUDA_CHECK and C10_CUDA_KERNEL_LAUNCH_CHECK
 #include <ATen/cuda/CUDAContext.h>
 #include "pscan.h"
@@ -38,7 +36,7 @@ __global__ void pscan_fwd_kernel(
     // allocated on invocation 
     extern __shared__ float temp[];
 
-    volatile float* dimBase = temp + powerOfTwo;
+    float* dimBase = temp + powerOfTwo;
 
     const int batchId = blockIdx.x / dim;
     const int dimOffset = blockIdx.x % dim;
@@ -78,7 +76,6 @@ __global__ void pscan_fwd_kernel(
         int bi = ai + stride;
         if (ai + stride < powerOfTwo) {
             dimBase[bi] += dimBase[ai] * temp[bi];
-            __threadfence_system();
             temp[bi] *= temp[ai];
         }
     }
@@ -107,8 +104,9 @@ void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {
     //dim3 grid(params.batch, params.dim);
     int num_blocks = params.batch * params.dim;
     
-    int shared_mem_size = 48 * 1024;
+    int shared_mem_size = 32 * 1024;
 
+    //std::cout << "N: " << params.batch << "; D: " << params.dim << std::endl;
     //std::cout << "stides: " << params.X.stride(0) << " " << params.X.stride(1) << " " << params.X.stride(2) << std::endl;
 
     auto kernel = &pscan_fwd_kernel<input_t>;
