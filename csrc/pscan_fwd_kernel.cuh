@@ -119,14 +119,6 @@ void pscan_fwd_launch(PScanParams &params, cudaStream_t stream) {
         dimChunk -= 1;
     }
     
-    //std::cout << dimChunk << std::endl;
-    
-    //int dimChunk = 8;
-    //int dimChunk = 1;
-
-    //std::cout << "N: " << params.batch << "; D: " << params.dim << std::endl;
-    //std::cout << "stides: " << params.X.stride(0) << " " << params.X.stride(1) << " " << params.X.stride(2) << std::endl;
-
     int numThreads = _cdiv(params.seqlen, 2);
     int numBlocks = params.batch * params.dim / dimChunk;
 
