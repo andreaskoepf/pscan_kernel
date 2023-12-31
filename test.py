@@ -21,28 +21,6 @@ def expand_(A, X):
         A[:, -1].mul_(A[:, -2])
 
 
-def expand(A, X):
-    if A.size(1) == 1:
-        return
-    # print("expand_ ", A.shape, X.shape)
-    T = 2 * (A.size(1) // 2)
-    Aa = A[:, :T].view(A.size(0), T // 2, 2, -1)
-    Xa = X[:, :T].view(X.size(0), T // 2, 2, -1)
-    # print("Aa, Xa", Aa.shape, Xa.shape)
-    Xaa = Xa[:, :, 1].add(Aa[:, :, 1].mul(Xa[:, :, 0]))
-    Aaa = Aa[:, :, 1].mul(Aa[:, :, 0])
-    Aaa, Xaa = expand(Aaa, Xaa)
-
-    Xa = Xa.clone()
-
-    Xa[:, 1:, 0].add_(Aa[:, 1:, 0].mul(Xa[:, :-1, 1]))
-    Aa[:, 1:, 0].mul_(Aa[:, :-1, 1])
-    if T < A.size(1):
-        # print('fixup:', T, A.size(1))
-        X[:, -1].add_(A[:, -1].mul(X[:, -2]))
-        A[:, -1].mul_(A[:, -2])
-
-
 def capture_expand_graph(A, X):
     _compiled_inputs = tuple(v.clone() for v in (A, X))
 
