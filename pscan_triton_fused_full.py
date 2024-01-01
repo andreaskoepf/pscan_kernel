@@ -116,14 +116,12 @@ def expand_kernel(
     view_stride = view_stride // 2
     view_offset -= view_stride
 
-    #tl.debug_barrier()
-
     # downward pass
     while view_stride > 0:
         indices1 = tl.arange(0, T_block_size) * 2 * view_stride + view_stride
         indices0 = indices1 + view_stride
 
-        tl.debug_barrier()
+        #tl.debug_barrier()
 
         block_offset = view_offset
         while block_offset < seqlen:
@@ -181,6 +179,13 @@ def expand_kernel(
         view_offset -= view_stride
 
 
+def nextPowerOfTwo(x: int) -> int:
+	power = 1
+	while (power < x):
+		power *= 2
+	return power
+
+
 def expand_triton(
     A: torch.Tensor,  # [N, T, 1]
     X: torch.Tensor,  # [N, T, D]
@@ -190,8 +195,11 @@ def expand_triton(
 
     assert A.shape[0] == N, "N mismatch"
     assert A.shape[1] == T, "T mismatch"
+    assert T == nextPowerOfTwo(T), "only pow2 vaues for T tested"
 
-    if D >= 64:
+    if D >= 128:
+        block_size_dim = 128
+    elif D >= 64:
         block_size_dim = 64
     elif D >= 32:
         block_size_dim = 32
@@ -199,7 +207,7 @@ def expand_triton(
         block_size_dim = 16
     else:
         block_size_dim = 8
-    
+
     if T >= 64:
         block_size_seq = 64
     elif T >= 32:
@@ -233,26 +241,14 @@ def expand_triton(
 
 
 def benchmark_params(N, T, D):
-    print()
     print(f"N={N}, T={T}, D={D}")
 
     A = torch.rand(N, T, 1, dtype=torch.float32, device="cuda") * 0.01 + 1
     X = torch.rand(N, T, D, dtype=torch.float32, device="cuda")
 
-    # generate reference results
-    A0, X0 = A.clone(), X.clone()
-    expand_(A0, X0)
-
-    # check graph version
-    
-    # A5,X5 = expand_replay(A, X)
-    # print("torch.allclose(A0, A5)", torch.allclose(A0, A5), torch.max(torch.abs(A0-A5)).item())
-    # print("torch.allclose(X0, X5)", torch.allclose(X0, X5), torch.max(torch.abs(X0-X5)).item())
-
     @torch.inference_mode()
     @torch.no_grad()
-    def benchmark_single(name, expand_fn, runs: int=3, warmup: int=1):
-
+    def benchmark_single(name, expand_fn, runs: int = 5, warmup: int = 2):
         for i in range(warmup):
             for _ in range(100):
                 A1 = A.clone()
@@ -293,6 +289,8 @@ def benchmark_params(N, T, D):
             torch.max(torch.abs(X1 - X2)).item(),
         )
 
+    print()
+
 
 def benchmark():
     configs = (
@@ -302,10 +300,9 @@ def benchmark():
         (384, 1024, 256),
         (512, 2048, 256),
     )
-    
+
     for N, T, D in configs:
         benchmark_params(N, T, D)
-
 
 
 def main():
